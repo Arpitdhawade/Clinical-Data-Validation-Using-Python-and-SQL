@@ -1,0 +1,105 @@
+# python/01_sdtm_conformance.py
+
+import pandas as pd
+from datetime import datetime
+
+class SDTMConformanceValidator:
+    """Validate SDTM datasets against IG 3.4"""
+    
+    def __init__(self):
+        self.errors = []
+        self.warnings = []
+        
+    def validate_dm(self, df):
+        """Validate Demographics domain"""
+        print("Validating DM domain...")
+        
+        # Check required variables
+        required_vars = ['STUDYID', 'DOMAIN', 'USUBJID', 'SITEID', 
+                        'AGE', 'SEX', 'RACE', 'ARM', 'RFSTDTC']
+        
+        for var in required_vars:
+            if var not in df.columns:
+                self.errors.append({
+                    'domain': 'DM',
+                    'check': 'REQUIRED_VARIABLE',
+                    'variable': var,
+                    'message': f'Missing required variable: {var}',
+                    'severity': 'ERROR'
+                })
+        
+        # Check DOMAIN value
+        if 'DOMAIN' in df.columns:
+            invalid_domain = df[df['DOMAIN'] != 'DM']
+            if len(invalid_domain) > 0:
+                self.errors.append({
+                    'domain': 'DM',
+                    'check': 'DOMAIN_VALUE',
+                    'records': len(invalid_domain),
+                    'message': 'DOMAIN must be "DM" for all records',
+                    'severity': 'ERROR'
+                })
+        
+        # Check USUBJID uniqueness
+        if 'USUBJID' in df.columns:
+            duplicates = df[df.duplicated(subset=['USUBJID'], keep=False)]
+            if len(duplicates) > 0:
+                self.errors.append({
+                    'domain': 'DM',
+                    'check': 'USUBJID_UNIQUE',
+                    'records': len(duplicates),
+                    'message': 'USUBJID must be unique',
+                    'severity': 'ERROR',
+                    'examples': duplicates['USUBJID'].head().tolist()
+                })
+        
+        # Check AGE data type
+        if 'AGE' in df.columns:
+            try:
+                df['AGE'] = pd.to_numeric(df['AGE'], errors='coerce')
+                non_numeric = df['AGE'].isna().sum()
+                if non_numeric > 0:
+                    self.warnings.append({
+                        'domain': 'DM',
+                        'check': 'AGE_NUMERIC',
+                        'records': non_numeric,
+                        'message': 'AGE should be numeric',
+                        'severity': 'WARNING'
+                    })
+            except:
+                pass
+        
+        # Check variable lengths
+        if 'USUBJID' in df.columns:
+            max_len = df['USUBJID'].str.len().max()
+            if max_len > 200:
+                self.errors.append({
+                    'domain': 'DM',
+                    'check': 'USUBJID_LENGTH',
+                    'value': max_len,
+                    'message': 'USUBJID exceeds maximum length (200)',
+                    'severity': 'ERROR'
+                })
+        
+        return self
+    
+    def generate_report(self):
+        """Generate validation report"""
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'total_errors': len(self.errors),
+            'total_warnings': len(self.warnings),
+            'errors': self.errors,
+            'warnings': self.warnings
+        }
+        return report
+
+# Usage
+validator = SDTMConformanceValidator()
+dm_df = pd.read_csv('data/cleaned/dm.csv')
+validator.validate_dm(dm_df)
+report = validator.generate_report()
+
+print(f"\nValidation Summary:")
+print(f"Errors: {report['total_errors']}")
+print(f"Warnings: {report['total_warnings']}")
